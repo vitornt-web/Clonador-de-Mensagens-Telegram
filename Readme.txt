@@ -86,7 +86,7 @@ TELEGRAM
 
 5° - Na URL pode deixar em branco.
 
-6° - A plataforma você escolhe, se você estiver em notebook ou PC, escolha o DESKTOP. Se você estiver no TERMUX escolha ANDROID.
+6° - A plataforma você escolhe, se você estiver em notebook ou PC, escolha o DESKTOP. Se você estiver no TERMUX escolha a opção ANDROID.
 
 7° - Na descrição deixe em branco e crie a aplicação.
 
