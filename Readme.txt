@@ -75,11 +75,13 @@ WINDOWS
 
 2° - Não tenho tanta familiaridade com o Windows mas recomendo assistir este tutorial para setar a variável do python: https://youtu.be/nM1QSFT4QR4?si=pUpJOLajcfC0gtcM
 
-3° - Após instalar o python, baixe o arquivo do script que estar neste repositório, descompacte ele e com a tecla SHIFT+BOTÃO DIREITO DO MOUSE abra com o powershell.
+3° - Após intalação do python instale o telethon com o comando: pip install telethon
 
-4° - Após abri a pasta no powershell escreva o comando: python main.py  #Rode o script
+4° - Após instalar o python, baixe o arquivo do script que estar neste repositório, descompacte ele e com a tecla SHIFT+BOTÃO DIREITO DO MOUSE abra com o powershell.
 
-5° - Para ter acesso à API do telegram, veja a seção telegram aqui da documentação.
+5° - Após abri a pasta no powershell escreva o comando: python main.py  #Rode o script
+
+6° - Para ter acesso à API do telegram, veja a seção telegram aqui da documentação.
 
 
 TELEGRAM
