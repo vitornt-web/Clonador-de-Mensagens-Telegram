@@ -1,243 +1,215 @@
 import asyncio
 import os
+import re
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError, FloodWaitError
 from telethon.tl.functions.messages import GetForumTopicsRequest
 
 SESSION_FILE = "telegram_session"
 
-
 def limpar_tela():
     os.system('cls' if os.name == 'nt' else 'clear')
 
-
-async def pausa_inteligente(count):
-    if count > 0 and count % 800 == 0:
-        print("\n⏳ Pausando 4 minutos para evitar FLOOD...\n")
-        await asyncio.sleep(240)
-
+async def gerenciar_pausa(count):
+    if count > 0 and count % 1000 == 0:
+        print(f"\n\n⏳ Limite de 1.000 mensagens atingido!")
+        for i in range(300, 0, -1):
+            minutos = i // 60
+            segundos = i % 60
+            print(f" standby: Retornando em {minutos:02d}:{segundos:02d}...", end='\r')
+            await asyncio.sleep(1)
+        print("\n🚀 Retomando o trabalho...\n")
 
 async def get_credentials():
     if not os.path.exists(".env"):
-        print("⚙️ PRIMEIRA CONFIGURAÇÃO")
-        api_id = input("API ID: ")
-        api_hash = input("API HASH: ")
-
+        print("⚙️ PRIMEIRA CONFIGURAÇÃO!")
+        api_id = input("API ID (número): ").strip()
+        api_hash = input("API HASH (código): ").strip()
         with open(".env", "w") as f:
-            f.write(f"{api_id}\n{api_hash}")
-
-    with open(".env") as f:
-        api_id, api_hash = f.read().splitlines()
-
-    return int(api_id), api_hash
-
+            f.write(f"{api_id}\n{api_hash}\n")
+    
+    with open(".env", "r") as f:
+        linhas = f.readlines()
+        if len(linhas) < 2:
+            os.remove(".env")
+            return await get_credentials()
+        return int(linhas[0].strip()), linhas[1].strip()
 
 async def connect_client():
     api_id, api_hash = await get_credentials()
-
     client = TelegramClient(SESSION_FILE, api_id, api_hash)
     await client.connect()
-
     if not await client.is_user_authorized():
-        phone = input("Telefone (+55...): ")
-
+        phone = input("Telefone (ex: +5511999999999): ")
         try:
             await client.send_code_request(phone)
-            await client.sign_in(phone, input("Código: "))
+            await client.sign_in(phone, input("Código recebido no Telegram: "))
         except SessionPasswordNeededError:
-            await client.sign_in(password=input("Senha 2FA: "))
-
+            pwd = input("Senha de 2 etapas (2FA) necessária: ")
+            await client.sign_in(password=pwd)
     return client
 
-
-async def listar_topicos_grupo(client, grupo):
-    print("\n🔎 Buscando tópicos...")
-
+async def listar_topicos_grupo(client, grupo_entidade):
+    print("\n🔍 Buscando tópicos do fórum...")
     try:
         result = await client(GetForumTopicsRequest(
-            grupo,
+            grupo_entidade,
             offset_date=None,
             offset_id=0,
             offset_topic=0,
-            limit=200
+            limit=150
         ))
-
-        if not result.topics:
-            print("❌ Este grupo não possui fórum ativo.")
+        
+        topicos = []
+        if hasattr(result, 'topics'):
+            for t in result.topics:
+                titulo = getattr(t, 'title', f"Tópico {t.id}")
+                topicos.append((t.id, titulo))
+            
+        if not topicos:
+            print("❌ Nenhum tópico encontrado.")
             return None
 
-        topicos = [(t.id, t.title) for t in result.topics]
+        for i, (t_id, titulo) in enumerate(topicos, 1):
+            print(f"  {i:2d}. {titulo} (ID: {t_id})")
+        
+        escolha = int(input(f"\nEscolha o tópico (1-{len(topicos)}): "))
+        return topicos[escolha-1][0]
 
-        for i, (_, titulo) in enumerate(topicos, 1):
-            print(f"{i:2d}. {titulo}")
+    except Exception:
+        return None
 
-        escolha = int(input("\nEscolha o tópico: "))
-        return topicos[escolha - 1][0]
+async def selecionar_entidade(client, tipo_msg):
+    print(f"\n--- SELECIONE {tipo_msg} ---")
+    dialogs = []
+    print("⏳ Carregando chats recentes...")
+    
+    async for d in client.iter_dialogs(limit=40):
+        if d.is_channel or d.is_group:
+            dialogs.append(d)
+    
+    for i, d in enumerate(dialogs, 1):
+        tipo = "Canal" if d.is_channel else "Grupo"
+        print(f"{i:2d}. {d.name[:30]:<30} | {tipo} | ID: {d.id}")
+    
+    try:
+        op = input("\nEscolha o número ou digite 0 para ID manual: ").strip()
+
+        if op == "0" or len(op) > 5:
+            manual_id = int(op if op != "0" else input("Digite o ID (ex: -100...): "))
+            entidade = await client.get_input_entity(manual_id)
+        else:
+            indice = int(op) - 1
+            entidade = dialogs[indice].entity
+
+        return entidade
 
     except Exception as e:
-        print("Erro ao listar tópicos:", e)
+        print(f"❌ Erro na seleção: {e}")
         return None
 
 
-async def selecionar_entidade(client, texto):
-    print(f"\n--- {texto} ---")
-    dialogs = []
-
-    async for d in client.iter_dialogs(limit=60):
-        if d.is_channel or d.is_group:
-            dialogs.append(d)
-
-    for i, d in enumerate(dialogs, 1):
-
-        if d.is_channel and not d.is_group:
-            tipo = "📢 Canal"
-        else:
-            tipo = "👥 Grupo"
-
-        print(f"{i:2d}. {d.name[:35]:<35} | {tipo}")
-
-    op = input("\nEscolha número ou digite ID (0 manual): ")
-
-    if op == "0" or len(op) > 4:
-        manual = int(op if op != "0" else input("Digite o ID: "))
-        return await client.get_input_entity(manual)
-
-    return dialogs[int(op) - 1].entity
-
-
-# ⭐ ENVIO ULTRA ESTÁVEL
-async def enviar_mensagem(client, origem, destino, msg, topico_destino=None):
-
-    if msg.action:
-        return
-
-    try:
-        # tenta forward
-        await client.forward_messages(
-            destino,
-            msg.id,
-            from_peer=origem,
-            reply_to=topico_destino if topico_destino else None
-        )
-
-    except Exception:
-
-        # fallback copia
-        try:
-            await client.send_message(
-                destino,
-                msg.text or "",
-                file=msg.media,
-                reply_to=topico_destino if topico_destino else None
-            )
-        except Exception as e:
-            print(f"⚠️ Erro ao enviar msg {msg.id}: {e}")
-
-
-async def clonar(client, origem, destino, topico_origem=None, topico_destino=None):
-
-    print("\n🚀 Iniciando clonagem...\n")
-
-    params = {"entity": origem, "reverse": True}
+async def clonar_processo(client, origem, destino, topico_origem=None, topico_destino=None):
+    count = 0
+    erros = 0
+    
+    params = {'entity': origem, 'reverse': True}
 
     if topico_origem:
-        params["reply_to"] = topico_origem
+        params['reply_to'] = topico_origem
 
-    count = 0
-
+    print(f"\n🚀 Iniciando clonagem...")
+    
     async for msg in client.iter_messages(**params):
 
+        if msg.action:
+            continue
+            
         try:
-            await pausa_inteligente(count)
+            await gerenciar_pausa(count)
 
-            await enviar_mensagem(
-                client,
-                origem,
-                destino,
-                msg,
-                topico_destino
-            )
+            if topico_destino:
+                await client.send_message(destino, msg, comment_to=topico_destino)
+            else:
+                await client.send_message(destino, msg)
 
             count += 1
 
-            if count % 10 == 0:
-                print(f"✅ {count} mensagens copiadas...", end="\r")
-
-            await asyncio.sleep(0.9)
-
+            if count % 5 == 0:
+                print(f"✅ {count} mensagens enviadas...", end='\r')
+            
+            await asyncio.sleep(1.2)
+            
         except FloodWaitError as e:
-            print(f"\n⚠️ Flood! Esperando {e.seconds}s")
+            print(f"\n⚠️ Flood detectado! Aguardando {e.seconds} segundos...")
             await asyncio.sleep(e.seconds)
 
         except Exception as e:
-            print("Erro geral:", e)
+            erros += 1
+            print(f"\n⚠️ Erro ao copiar mensagem {msg.id}: {e}")
 
-    print(f"\n\n✅ FINALIZADO — {count} mensagens copiadas.\n")
+            if erros > 40: 
+                print("\n🔴 Excesso de erros.")
+                break 
+
+    print(f"\n\n✅ Finalizado! Total: {count} | Erros: {erros}")
 
 
-async def menu():
+async def menu_principal():
     client = await connect_client()
-
+    
     while True:
         limpar_tela()
-
-        print("""
-╔══════════════════════════════════════╗
-║        🚀 TELEGRAM CLONER PRO MAX    ║
-╠══════════════════════════════════════╣
-║ 1️⃣ Canal → Canal 🔥🔥🔥             ║
-║ 2️⃣ Canal/Grupo → Chat normal        ║
-║ 3️⃣ Tópico → Tópico (fórum)          ║
-║ 4️⃣ Canal → Tópico (fórum)           ║
-║ 5️⃣ Sair                            ║
-╚══════════════════════════════════════╝
+        print(f"""
+        ╔══════════════════════════════════════╗
+        ║ 𓅂 CLONADOR DE CONTEÚDO TELEGRAM 𓅂  ║
+        ║           BY: OLIVEIRA               ║
+        ║       † VIVA CRISTO REI! †           ║
+        ╠══════════════════════════════════════╣
+        ║ 1. Canal → Canal                    ║
+        ║ 2. Canal → Tópico                   ║
+        ║ 3. Tópico → Canal                   ║
+        ║ 4. Tópico → Tópico                  ║
+        ║ 5. Limpar Sessão e Sair             ║
+        ╚══════════════════════════════════════╝
         """)
-
-        op = input("Escolha: ")
-
-        # 🔥 CANAL -> CANAL
-        if op == "1":
-            print("\n📢 Canal de ORIGEM")
+        
+        opcao = input("Opção: ")
+        
+        if opcao == "1":
             origem = await selecionar_entidade(client, "CANAL ORIGEM")
-
-            print("\n📢 Canal de DESTINO")
             destino = await selecionar_entidade(client, "CANAL DESTINO")
+            await clonar_processo(client, origem, destino)
 
-            if origem and destino:
-                await clonar(client, origem, destino)
+        elif opcao == "2":
+            origem = await selecionar_entidade(client, "CANAL ORIGEM")
+            destino = await selecionar_entidade(client, "GRUPO DESTINO")
+            topico_destino = await listar_topicos_grupo(client, destino)
+            await clonar_processo(client, origem, destino, None, topico_destino)
 
-        elif op == "2":
-            origem = await selecionar_entidade(client, "ORIGEM")
-            destino = await selecionar_entidade(client, "DESTINO")
-
-            if origem and destino:
-                await clonar(client, origem, destino)
-
-        elif op == "3":
+        elif opcao == "3":
             origem = await selecionar_entidade(client, "GRUPO ORIGEM")
             topico_origem = await listar_topicos_grupo(client, origem)
+            destino = await selecionar_entidade(client, "CANAL DESTINO")
+            await clonar_processo(client, origem, destino, topico_origem, None)
 
+        elif opcao == "4":
+            origem = await selecionar_entidade(client, "GRUPO ORIGEM")
+            topico_origem = await listar_topicos_grupo(client, origem)
             destino = await selecionar_entidade(client, "GRUPO DESTINO")
             topico_destino = await listar_topicos_grupo(client, destino)
+            await clonar_processo(client, origem, destino, topico_origem, topico_destino)
 
-            if topico_origem and topico_destino:
-                await clonar(client, origem, destino, topico_origem, topico_destino)
-
-        elif op == "4":
-            origem = await selecionar_entidade(client, "CANAL ORIGEM")
-            destino = await selecionar_entidade(client, "GRUPO DESTINO")
-
-            topico_destino = await listar_topicos_grupo(client, destino)
-
-            if origem and destino and topico_destino:
-                await clonar(client, origem, destino, None, topico_destino)
-
-        elif op == "5":
+        elif opcao == "5":
             await client.disconnect()
+            print("Saindo...")
             break
-
-        input("\nENTER para voltar...")
+            
+        input("\nPressione ENTER para voltar ao menu...")
 
 
 if __name__ == "__main__":
-    asyncio.run(menu())
+    try:
+        asyncio.run(menu_principal())
+    except KeyboardInterrupt:
+        print("\nSaindo com segurança...")
